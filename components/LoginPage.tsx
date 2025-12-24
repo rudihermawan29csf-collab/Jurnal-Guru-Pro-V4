@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { UserCog, GraduationCap, Lock, X, ChevronRight, User } from 'lucide-react';
+import { UserCog, GraduationCap, Lock, X, ChevronRight, User, Eye, EyeOff } from 'lucide-react';
 import { UserRole, AuthSettings, TeacherData } from '../types';
 
 interface LoginPageProps {
@@ -15,6 +15,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
   // Login Form States
   const [selectedName, setSelectedName] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
 
   // Extract unique teacher names
@@ -26,6 +27,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
     setActiveModal(null);
     setSelectedName('');
     setPassword('');
+    setShowPassword(false);
     setError('');
   };
 
@@ -33,28 +35,31 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
     e.preventDefault();
     setError('');
 
+    const inputPass = password.trim();
+
     if (activeModal === 'ADMIN') {
-      const validPass = authSettings.adminPassword || '007007Rh';
-      if (password === validPass) {
+      const validPass = (authSettings.adminPassword || '007007Rh').trim();
+      if (inputPass === validPass) {
         onLogin('ADMIN');
       } else {
-        setError('Password salah!');
+        setError('Password Admin salah!');
       }
     } 
     else if (activeModal === 'TEACHER') {
       if (!selectedName) {
-        setError('Pilih nama guru terlebih dahulu.');
+        setError('Silakan pilih nama Anda dari daftar.');
         return;
       }
-      const storedPass = authSettings.teacherPasswords[selectedName];
       
-      // LOGIC DEFAULT PASSWORD GURU
-      const validPass = storedPass && storedPass.trim() !== '' ? storedPass : 'guru123';
+      const storedPass = authSettings.teacherPasswords ? authSettings.teacherPasswords[selectedName] : null;
+      
+      // LOGIC DEFAULT PASSWORD GURU: guru123
+      const validPass = (storedPass && storedPass.trim() !== '') ? storedPass.trim() : 'guru123';
 
-      if (password === validPass) {
+      if (inputPass === validPass) {
          onLogin('TEACHER', selectedName);
       } else {
-         setError('Password salah!');
+         setError('Password salah! Coba gunakan "guru123" jika Anda belum pernah mengubahnya.');
       }
     }
   };
@@ -79,7 +84,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
             <h2 className="text-xl font-medium opacity-90">SMPN 3 Pacet</h2>
           </div>
           <p className="relative z-10 text-indigo-100 leading-relaxed mb-8">
-            Platform terintegrasi untuk pengelolaan jadwal pelajaran, pembagian tugas guru, dan analisis beban kerja secara real-time.
+            Platform terintegrasi untuk pengelolaan jadwal pelajaran, jurnal mengajar, dan rekapitulasi data guru secara real-time.
           </p>
           <div className="relative z-10 text-xs text-indigo-300 mt-auto">
             &copy; 2025 SMPN 3 Pacet. All rights reserved.
@@ -100,7 +105,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
               </div>
               <div className="ml-4 text-left flex-1">
                 <p className="text-lg font-bold text-gray-800 group-hover:text-indigo-700">Admin / Kurikulum</p>
-                <p className="text-xs text-gray-500">Akses penuh pengaturan jadwal & data</p>
+                <p className="text-xs text-gray-500">Akses pengaturan jadwal & master data</p>
               </div>
               <ChevronRight className="text-gray-300 group-hover:text-indigo-600 transition-colors" />
             </button>
@@ -114,7 +119,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
               </div>
               <div className="ml-4 text-left flex-1">
                 <p className="text-lg font-bold text-gray-800 group-hover:text-emerald-700">Guru</p>
-                <p className="text-xs text-gray-500">Lihat jadwal mengajar & tugas</p>
+                <p className="text-xs text-gray-500">Isi jurnal mengajar & lihat jadwal</p>
               </div>
               <ChevronRight className="text-gray-300 group-hover:text-emerald-600 transition-colors" />
             </button>
@@ -143,14 +148,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
               {/* Identity Selector for Teacher */}
               {activeModal === 'TEACHER' && (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Pilih Nama Guru</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Pilih Nama Anda</label>
                   <div className="relative">
                     <select 
                       value={selectedName}
                       onChange={(e) => setSelectedName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none appearance-none"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none appearance-none bg-white text-sm"
                     >
-                      <option value="">-- Pilih Guru --</option>
+                      <option value="">-- Pilih Nama --</option>
                       {teacherNames.map(name => <option key={name} value={name}>{name}</option>)}
                     </select>
                     <User className="absolute left-3 top-2.5 text-gray-400" size={18} />
@@ -161,20 +166,40 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
               {/* Password Input */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if(error) setError('');
-                  }}
-                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 outline-none transition-all ${
-                    error ? 'border-red-500 ring-1 ring-red-200' : 'border-gray-300 focus:ring-indigo-500'
-                  }`}
-                  placeholder="Masukkan password..."
-                  autoFocus
-                />
-                {error && <p className="text-red-500 text-xs mt-2 font-medium flex items-center gap-1 animate-shake">⚠️ {error}</p>}
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if(error) setError('');
+                    }}
+                    className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 outline-none transition-all pr-12 text-sm ${
+                      error ? 'border-red-500 ring-1 ring-red-200' : 'border-gray-300 focus:ring-indigo-500'
+                    }`}
+                    placeholder="Masukkan password..."
+                    autoFocus
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                
+                {activeModal === 'TEACHER' && (
+                  <p className="text-[10px] text-gray-500 mt-2 italic">
+                    * Password default: <span className="font-bold text-indigo-600">guru123</span>
+                  </p>
+                )}
+
+                {error && (
+                  <div className="mt-3 p-2 bg-red-50 border border-red-100 rounded flex gap-2 items-start animate-shake">
+                    <span className="text-red-500 text-xs font-medium">⚠️ {error}</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-3 justify-end mt-6">
@@ -189,7 +214,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, authSettings, teacherDat
                   type="submit"
                   className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-bold shadow-lg shadow-indigo-200 transition-all active:scale-95"
                 >
-                  Masuk
+                  Masuk Sekarang
                 </button>
               </div>
             </form>
