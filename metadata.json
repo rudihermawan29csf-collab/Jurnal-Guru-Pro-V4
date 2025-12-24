@@ -1,0 +1,7 @@
+{
+  "name": "Jurnal Guru Pro",
+  "description": "Dashboard manajemen pembagian tugas guru, jadwal mengajar, dan analisis beban kerja sekolah.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
