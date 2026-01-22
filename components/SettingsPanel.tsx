@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Save, RefreshCw, Shield, Layout, Lock, Plus, Trash2, CalendarX, AlertCircle, Edit2, X, Filter, Calendar, Ban, Users, Upload, FileSpreadsheet, CheckCircle2, Download, FileJson, UploadCloud, Database, Activity, Loader2, ArrowRightLeft, Sheet, Globe, Link } from 'lucide-react';
 import { AppSettings, AuthSettings, TeacherData, TeacherLeave, LeaveType, SettingsPanelProps, Student } from '../types';
@@ -171,7 +172,35 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const handleAuthChange = (e: React.ChangeEvent<HTMLInputElement>) => { const { name, value } = e.target; setAuthData(prev => ({ ...prev, [name]: value })); setIsAuthSaved(false); };
   const handleTeacherPassChange = (name: string, pass: string) => { setAuthData(prev => ({ ...prev, teacherPasswords: { ...prev.teacherPasswords, [name]: pass } })); setIsAuthSaved(false); };
   const handleAuthSubmit = (e: React.FormEvent) => { e.preventDefault(); onSaveAuth(authData); setIsAuthSaved(true); setTimeout(() => setIsAuthSaved(false), 3000); };
-  const handleLeaveSubmit = (e: React.FormEvent) => { e.preventDefault(); const teacher = teacherData.find(t => String(t.id) === leaveForm.teacherId); if (!teacher) return; if (editingId) { onEditLeave && onEditLeave({ id: editingId, teacherId: parseInt(leaveForm.teacherId), teacherName: teacher.name, date: leaveForm.date, type: leaveForm.type, description: leaveForm.description }); setEditingId(null); } else { onToggleLeave && onToggleLeave({ id: Date.now().toString(), teacherId: parseInt(leaveForm.teacherId), teacherName: teacher.name, date: leaveForm.date, type: leaveForm.type, description: leaveForm.description }); } setLeaveForm({ date: new Date().toISOString().split('T')[0], teacherId: '', type: 'SAKIT', description: '' }); };
+  
+  const handleLeaveSubmit = (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    const teacher = teacherData.find(t => String(t.id) === leaveForm.teacherId); 
+    if (!teacher) return; 
+    
+    if (editingId) { 
+        onEditLeave && onEditLeave({ 
+            id: editingId, 
+            teacherId: parseInt(leaveForm.teacherId), 
+            teacherName: teacher.name, 
+            date: leaveForm.date, 
+            type: leaveForm.type, 
+            description: leaveForm.description 
+        }); 
+        setEditingId(null); 
+    } else { 
+        // Removed 'id' property here to match Omit<TeacherLeave, 'id'>
+        onToggleLeave && onToggleLeave({ 
+            teacherId: parseInt(leaveForm.teacherId), 
+            teacherName: teacher.name, 
+            date: leaveForm.date, 
+            type: leaveForm.type, 
+            description: leaveForm.description 
+        }); 
+    } 
+    setLeaveForm({ date: new Date().toISOString().split('T')[0], teacherId: '', type: 'SAKIT', description: '' }); 
+  };
+
   const handleStudentSubmit = (e: React.FormEvent) => { e.preventDefault(); if (editingStudentId && onEditStudent) { onEditStudent({ id: editingStudentId, ...studentForm }); setEditingStudentId(null); } else if (onAddStudent) { onAddStudent({ id: Date.now().toString(), ...studentForm }); } setStudentForm({ name: '', className: studentForm.className }); setIsStudentSaved(true); setTimeout(() => setIsStudentSaved(false), 2000); };
   const handleStudentExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file || !onBulkAddStudents) return; const reader = new FileReader(); reader.onload = (evt) => { try { const bstr = evt.target?.result; const wb = XLSX.read(bstr, { type: 'binary' }); const wsname = wb.SheetNames[0]; const ws = wb.Sheets[wsname]; const data = XLSX.utils.sheet_to_json(ws) as any[]; const newStudents: Student[] = []; data.forEach((row, idx) => { const name = row['Nama'] || row['NAMA'] || row['Nama Siswa']; const cls = row['Kelas'] || row['KELAS'] || uploadClassTarget; if (name) { newStudents.push({ id: Date.now().toString() + idx, name: String(name), className: String(cls) }); } }); if (newStudents.length > 0) { onBulkAddStudents(newStudents); alert(`Berhasil menambahkan ${newStudents.length} siswa.`); } else { alert("Tidak ada data siswa yang valid ditemukan."); } } catch (error) { console.error(error); alert("Gagal membaca file Excel."); } }; reader.readAsBinaryString(file); };
   
