@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import TeacherTable from './components/TeacherTable';
 import ScheduleTable from './components/ScheduleTable';
 import GeminiAssistant from './components/GeminiAssistant';
@@ -8,7 +8,8 @@ import LoginPage from './components/LoginPage';
 import SettingsPanel from './components/SettingsPanel';
 import { ViewMode, TeacherData, UserRole, AppSettings, AuthSettings, CalendarEvent, TeacherLeave, TeachingMaterial, TeachingJournal, Student, GradeRecord, HomeroomRecord, AttitudeRecord, TeacherAgenda } from './types';
 import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS, DEFAULT_SCHEDULE_MAP, INITIAL_APP_SETTINGS, INITIAL_JOURNALS, INITIAL_AGENDAS, INITIAL_ATTITUDE, INITIAL_HOMEROOM, INITIAL_GRADES, INITIAL_MATERIALS, INITIAL_LEAVES } from './constants';
-import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown, BookOpen, Users, GraduationCap, ClipboardList, User, Cloud, CloudOff, RefreshCw, AlertCircle, Heart, FileText, CheckCircle2, Loader2, Zap } from 'lucide-react';
+import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown, BookOpen, Users, GraduationCap, ClipboardList, User, Cloud, CloudOff, RefreshCw, AlertCircle, Heart, FileText, CheckCircle2, Loader2, Zap, Wifi, WifiOff } from 'lucide-react';
+import { sheetApi } from './services/sheetApi';
 
 const App: React.FC = () => {
   // --- AUTH STATE ---
@@ -33,9 +34,60 @@ const App: React.FC = () => {
   const [attitudeRecords, setAttitudeRecords] = useState<AttitudeRecord[]>(INITIAL_ATTITUDE);
   const [teacherAgendas, setTeacherAgendas] = useState<TeacherAgenda[]>(INITIAL_AGENDAS);
 
+  // CLOUD STATE
+  const [cloudStatus, setCloudStatus] = useState<'DISCONNECTED' | 'CONNECTED' | 'SYNCING' | 'ERROR'>(
+    sheetApi.isConfigured() ? 'CONNECTED' : 'DISCONNECTED'
+  );
+  const [isLoadingCloud, setIsLoadingCloud] = useState(false);
+
   // UI STATES
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // --- INITIAL DATA LOAD ---
+  useEffect(() => {
+    const loadFromCloud = async () => {
+      if (sheetApi.isConfigured()) {
+        setIsLoadingCloud(true);
+        setCloudStatus('SYNCING');
+        try {
+          const data = await sheetApi.fetchAll();
+          if (data) {
+            handleRestore(data);
+            setCloudStatus('CONNECTED');
+          } else {
+            setCloudStatus('ERROR');
+          }
+        } catch (error) {
+          console.error("Cloud Load Error:", error);
+          setCloudStatus('ERROR');
+        } finally {
+          setIsLoadingCloud(false);
+        }
+      } else {
+        setCloudStatus('DISCONNECTED');
+      }
+    };
+
+    loadFromCloud();
+  }, []);
+
+  // --- SYNC HELPER ---
+  const updateAndSync = (key: string, setter: React.Dispatch<React.SetStateAction<any>>, update: any) => {
+    setter((prev: any) => {
+      const nextValue = typeof update === 'function' ? update(prev) : update;
+      
+      // Fire and forget sync
+      if (sheetApi.isConfigured()) {
+        setCloudStatus('SYNCING');
+        sheetApi.save(key, nextValue)
+          .then(() => setCloudStatus('CONNECTED'))
+          .catch(() => setCloudStatus('ERROR'));
+      }
+      
+      return nextValue;
+    });
+  };
 
   // RESTORE HANDLER
   const handleRestore = (data: any) => {
@@ -55,6 +107,23 @@ const App: React.FC = () => {
       if (data.teacherAgendas) setTeacherAgendas(data.teacherAgendas);
   };
 
+  // --- WRAPPED SETTERS ---
+  const setAppSettingsSync = (v: any) => updateAndSync('appSettings', setAppSettings, v);
+  const setAuthSettingsSync = (v: any) => updateAndSync('authSettings', setAuthSettings, v);
+  const setTeachersSync = (v: any) => updateAndSync('teacherData', setTeachers, v);
+  const setScheduleMapSync = (v: any) => updateAndSync('scheduleMap', setScheduleMap, v);
+  const setUnavailableConstraintsSync = (v: any) => updateAndSync('unavailableConstraints', setUnavailableConstraints, v);
+  const setCalendarEventsSync = (v: any) => updateAndSync('calendarEvents', setCalendarEvents, v);
+  const setTeacherLeavesSync = (v: any) => updateAndSync('teacherLeaves', setTeacherLeaves, v);
+  const setStudentsSync = (v: any) => updateAndSync('students', setStudents, v);
+  const setTeachingMaterialsSync = (v: any) => updateAndSync('teachingMaterials', setTeachingMaterials, v);
+  const setTeachingJournalsSync = (v: any) => updateAndSync('teachingJournals', setTeachingJournals, v);
+  const setStudentGradesSync = (v: any) => updateAndSync('studentGrades', setStudentGrades, v);
+  const setHomeroomRecordsSync = (v: any) => updateAndSync('homeroomRecords', setHomeroomRecords, v);
+  const setAttitudeRecordsSync = (v: any) => updateAndSync('attitudeRecords', setAttitudeRecords, v);
+  const setTeacherAgendasSync = (v: any) => updateAndSync('teacherAgendas', setTeacherAgendas, v);
+
+
   // --- HANDLERS ---
   const handleLogin = (role: UserRole, username?: string) => {
     setUserRole(role);
@@ -63,6 +132,16 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => { setUserRole(null); setCurrentUser(''); setIsMenuOpen(false); };
+
+  if (isLoadingCloud) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-indigo-600">
+        <Loader2 size={48} className="animate-spin mb-4"/>
+        <h2 className="text-xl font-bold">Menghubungkan ke Cloud...</h2>
+        <p className="text-sm text-gray-500 mt-2">Mengambil data terbaru dari server</p>
+      </div>
+    );
+  }
 
   if (!userRole) return <LoginPage onLogin={handleLogin} authSettings={authSettings} teacherData={teachers} />;
 
@@ -99,7 +178,12 @@ const App: React.FC = () => {
                 <h2 className="text-base font-bold text-indigo-700 leading-tight mt-1">SMPN 3 Pacet</h2>
                 <div className="flex flex-col mt-1">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">TA {appSettings.academicYear} • {appSettings.semester}</p>
-                   <div className="flex items-center gap-1 mt-1 text-[10px] text-green-600 font-bold"><Zap size={10} fill="currentColor" /><span>App Ready (Local Mode)</span></div>
+                   <div className="flex items-center gap-2 mt-1">
+                      {cloudStatus === 'CONNECTED' && <span className="flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full"><Wifi size={10} /> Online</span>}
+                      {cloudStatus === 'SYNCING' && <span className="flex items-center gap-1 text-[10px] text-blue-600 font-bold bg-blue-50 px-2 py-0.5 rounded-full"><RefreshCw size={10} className="animate-spin" /> Menyimpan...</span>}
+                      {cloudStatus === 'DISCONNECTED' && <span className="flex items-center gap-1 text-[10px] text-gray-500 font-bold bg-gray-100 px-2 py-0.5 rounded-full"><WifiOff size={10} /> Offline (Lokal)</span>}
+                      {cloudStatus === 'ERROR' && <span className="flex items-center gap-1 text-[10px] text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded-full"><AlertCircle size={10} /> Gagal Sync</span>}
+                   </div>
                 </div>
               </div>
             </div>
@@ -134,8 +218,8 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="animate-fade-in">
-          {viewMode === ViewMode.TABLE && userRole === 'ADMIN' && <TeacherTable data={teachers} searchTerm={searchTerm} onAdd={t => setTeachers([...teachers, t])} onBulkAdd={newTeachers => setTeachers([...teachers, ...newTeachers])} onEdit={t => setTeachers(teachers.map(x => x.id === t.id ? t : x))} onDelete={id => setTeachers(teachers.filter(x => x.id !== id))} appSettings={appSettings} />}
-          {viewMode === ViewMode.SCHEDULE && userRole === 'ADMIN' && <ScheduleTable teacherData={teachers} unavailableConstraints={unavailableConstraints} scheduleMap={scheduleMap} setScheduleMap={setScheduleMap} onSave={() => {}} />}
+          {viewMode === ViewMode.TABLE && userRole === 'ADMIN' && <TeacherTable data={teachers} searchTerm={searchTerm} onAdd={t => setTeachersSync([...teachers, t])} onBulkAdd={newTeachers => setTeachersSync([...teachers, ...newTeachers])} onEdit={t => setTeachersSync(teachers.map(x => x.id === t.id ? t : x))} onDelete={id => setTeachersSync(teachers.filter(x => x.id !== id))} appSettings={appSettings} />}
+          {viewMode === ViewMode.SCHEDULE && userRole === 'ADMIN' && <ScheduleTable teacherData={teachers} unavailableConstraints={unavailableConstraints} scheduleMap={scheduleMap} setScheduleMap={setScheduleMapSync} onSave={() => {}} />}
           {(viewMode === ViewMode.CLASS_SCHEDULE || viewMode === ViewMode.TEACHER_SCHEDULE || viewMode === ViewMode.JOURNAL || viewMode === ViewMode.MONITORING || viewMode === ViewMode.GRADES || viewMode === ViewMode.HOMEROOM || viewMode === ViewMode.ATTITUDE || viewMode === ViewMode.AGENDA) && (
              <ClassTeacherSchedule 
                 teacherData={teachers} 
@@ -145,50 +229,50 @@ const App: React.FC = () => {
                 appSettings={appSettings} 
                 students={students} 
                 teachingMaterials={teachingMaterials} 
-                onAddMaterial={m => setTeachingMaterials([...teachingMaterials, m])} 
-                onEditMaterial={m => setTeachingMaterials(teachingMaterials.map(x => x.id === m.id ? m : x))} 
-                onDeleteMaterial={id => setTeachingMaterials(teachingMaterials.filter(x => x.id !== id))} 
+                onAddMaterial={m => setTeachingMaterialsSync([...teachingMaterials, m])} 
+                onEditMaterial={m => setTeachingMaterialsSync(teachingMaterials.map(x => x.id === m.id ? m : x))} 
+                onDeleteMaterial={id => setTeachingMaterialsSync(teachingMaterials.filter(x => x.id !== id))} 
                 teachingJournals={teachingJournals} 
-                onAddJournal={j => setTeachingJournals([...teachingJournals, j])} 
-                onEditJournal={j => setTeachingJournals(teachingJournals.map(x => x.id === j.id ? j : x))} 
-                onDeleteJournal={id => setTeachingJournals(teachingJournals.filter(x => x.id !== id))} 
+                onAddJournal={j => setTeachingJournalsSync([...teachingJournals, j])} 
+                onEditJournal={j => setTeachingJournalsSync(teachingJournals.map(x => x.id === j.id ? j : x))} 
+                onDeleteJournal={id => setTeachingJournalsSync(teachingJournals.filter(x => x.id !== id))} 
                 studentGrades={studentGrades} 
-                onUpdateGrade={g => setStudentGrades(prev => prev.find(x => x.id === g.id) ? prev.map(x => x.id === g.id ? g : x) : [...prev, g])} 
+                onUpdateGrade={g => setStudentGradesSync((prev: GradeRecord[]) => prev.find(x => x.id === g.id) ? prev.map(x => x.id === g.id ? g : x) : [...prev, g])} 
                 homeroomRecords={homeroomRecords} 
-                onAddHomeroomRecord={r => setHomeroomRecords([...homeroomRecords, r])} 
-                onEditHomeroomRecord={r => setHomeroomRecords(homeroomRecords.map(x => x.id === r.id ? r : x))} 
-                onDeleteHomeroomRecord={id => setHomeroomRecords(homeroomRecords.filter(x => x.id !== id))} 
+                onAddHomeroomRecord={r => setHomeroomRecordsSync([...homeroomRecords, r])} 
+                onEditHomeroomRecord={r => setHomeroomRecordsSync(homeroomRecords.map(x => x.id === r.id ? r : x))} 
+                onDeleteHomeroomRecord={id => setHomeroomRecordsSync(homeroomRecords.filter(x => x.id !== id))} 
                 attitudeRecords={attitudeRecords}
-                onAddAttitudeRecord={r => setAttitudeRecords([...attitudeRecords, r])}
-                onEditAttitudeRecord={r => setAttitudeRecords(attitudeRecords.map(x => x.id === r.id ? r : x))}
-                onDeleteAttitudeRecord={id => setAttitudeRecords(attitudeRecords.filter(x => x.id !== id))}
+                onAddAttitudeRecord={r => setAttitudeRecordsSync([...attitudeRecords, r])}
+                onEditAttitudeRecord={r => setAttitudeRecordsSync(attitudeRecords.map(x => x.id === r.id ? r : x))}
+                onDeleteAttitudeRecord={id => setAttitudeRecordsSync(attitudeRecords.filter(x => x.id !== id))}
                 teacherAgendas={teacherAgendas}
-                onAddAgenda={a => setTeacherAgendas([...teacherAgendas, a])}
-                onEditAgenda={a => setTeacherAgendas(teacherAgendas.map(x => x.id === a.id ? a : x))}
-                onDeleteAgenda={id => setTeacherAgendas(teacherAgendas.filter(x => x.id !== id))}
+                onAddAgenda={a => setTeacherAgendasSync([...teacherAgendas, a])}
+                onEditAgenda={a => setTeacherAgendasSync(teacherAgendas.map(x => x.id === a.id ? a : x))}
+                onDeleteAgenda={id => setTeacherAgendasSync(teacherAgendas.filter(x => x.id !== id))}
                 initialTab={viewMode === ViewMode.JOURNAL ? 'JOURNAL' : viewMode === ViewMode.MONITORING ? 'MONITORING' : viewMode === ViewMode.GRADES ? 'GRADES' : viewMode === ViewMode.HOMEROOM ? 'HOMEROOM' : viewMode === ViewMode.ATTITUDE ? 'ATTITUDE' : viewMode === ViewMode.TEACHER_SCHEDULE ? 'TEACHER' : viewMode === ViewMode.AGENDA ? 'AGENDA' : 'CLASS'} 
              />
           )}
           {viewMode === ViewMode.SETTINGS && userRole === 'ADMIN' && (
             <SettingsPanel 
                 settings={appSettings} 
-                onSave={setAppSettings} 
+                onSave={setAppSettingsSync} 
                 authSettings={authSettings} 
-                onSaveAuth={setAuthSettings} 
+                onSaveAuth={setAuthSettingsSync} 
                 teacherData={teachers} 
                 teacherLeaves={teacherLeaves} 
-                onToggleLeave={l => setTeacherLeaves([...teacherLeaves, {...l, id: Date.now().toString()}])} 
-                onEditLeave={l => setTeacherLeaves(teacherLeaves.map(x => x.id === l.id ? l : x))} 
-                onDeleteLeave={id => setTeacherLeaves(teacherLeaves.filter(x => x.id !== id))} 
+                onToggleLeave={l => setTeacherLeavesSync([...teacherLeaves, {...l, id: Date.now().toString()}])} 
+                onEditLeave={l => setTeacherLeavesSync(teacherLeaves.map(x => x.id === l.id ? l : x))} 
+                onDeleteLeave={id => setTeacherLeavesSync(teacherLeaves.filter(x => x.id !== id))} 
                 calendarEvents={calendarEvents} 
-                onUpdateCalendar={setCalendarEvents} 
+                onUpdateCalendar={setCalendarEventsSync} 
                 unavailableConstraints={unavailableConstraints} 
-                onToggleConstraint={(c, d) => setUnavailableConstraints(prev => ({ ...prev, [c]: (prev[c] || []).includes(d) ? prev[c].filter(x => x !== d) : [...(prev[c] || []), d] }))} 
+                onToggleConstraint={(c, d) => setUnavailableConstraintsSync((prev: any) => ({ ...prev, [c]: (prev[c] || []).includes(d) ? prev[c].filter((x: any) => x !== d) : [...(prev[c] || []), d] }))} 
                 students={students} 
-                onAddStudent={s => setStudents([...students, s])} 
-                onEditStudent={s => setStudents(students.map(x => x.id === s.id ? s : x))} 
-                onDeleteStudent={id => setStudents(students.filter(x => x.id !== id))} 
-                onBulkAddStudents={s => setStudents([...students, ...s])} 
+                onAddStudent={s => setStudentsSync([...students, s])} 
+                onEditStudent={s => setStudentsSync(students.map(x => x.id === s.id ? s : x))} 
+                onDeleteStudent={id => setStudentsSync(students.filter(x => x.id !== id))} 
+                onBulkAddStudents={s => setStudentsSync([...students, ...s])} 
                 onRestore={handleRestore}
                 // Passing Full Data for Export
                 teachingMaterials={teachingMaterials}

@@ -2,14 +2,37 @@
 // Service to interact with Google Apps Script Web App
 // Acts as a simple Key-Value store wrapper
 
-// Ambil URL dari environment variable atau gunakan URL default yang diberikan user
-const SHEET_URL = process.env.VITE_SHEET_URL || (import.meta as any).env?.VITE_SHEET_URL || "https://script.google.com/macros/s/AKfycbzmItDQS-I0jwahIbckSVYcZUvjMVjVzOaZIniMfWlyhTaVltAZrF-Zy_hurtrv2-m0/exec";
+const STORAGE_KEY_URL = 'app_sheet_url';
+
+// URL Backend Default yang Anda berikan
+const DEFAULT_SHEET_URL = "https://script.google.com/macros/s/AKfycbxxSCzzbnJP3dA1xUe772DH4Hs0KDZamWUx94pzZGirper0OaV_mhnjPDAzg_0JlKQ3/exec";
+
+// Helper to get URL dynamically
+const getSheetUrl = () => {
+  // Prioritas: LocalStorage (jika user mengubahnya manual) -> Environment Variable -> Default Hardcoded
+  return localStorage.getItem(STORAGE_KEY_URL) || 
+         process.env.VITE_SHEET_URL || 
+         (import.meta as any).env?.VITE_SHEET_URL || 
+         DEFAULT_SHEET_URL;
+};
 
 export const sheetApi = {
+  // Update URL dynamically
+  setBaseUrl: (url: string) => {
+    if (url) {
+      localStorage.setItem(STORAGE_KEY_URL, url);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_URL);
+    }
+  },
+
+  getBaseUrl: () => getSheetUrl(),
+
   // Check if cloud sync is enabled
   isConfigured: () => {
-    const isValid = typeof SHEET_URL === 'string' && SHEET_URL.startsWith('https://script.google.com');
-    if (!isValid) {
+    const url = getSheetUrl();
+    const isValid = typeof url === 'string' && url.startsWith('https://script.google.com');
+    if (!isValid && url.length > 0) {
       console.warn("Sheet API: URL Spreadsheet tidak valid.");
     }
     return isValid;
@@ -19,15 +42,37 @@ export const sheetApi = {
   fetchAll: async () => {
     if (!sheetApi.isConfigured()) return null;
     
+    const baseUrl = getSheetUrl();
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const urlWithCacheBuster = `${baseUrl}${separator}t=${Date.now()}`;
+
     try {
       console.log("Sheet API: Memulai pengambilan data dari Cloud...");
-      const urlWithCacheBuster = `${SHEET_URL}?t=${Date.now()}`;
       
-      const response = await fetch(urlWithCacheBuster, {
-        method: 'GET',
-        headers: { 'Content-Type': 'text/plain' }
-      });
+      let response;
+      let error;
       
+      // Simple retry logic
+      for (let i = 0; i < 3; i++) {
+        try {
+          response = await fetch(urlWithCacheBuster, {
+            method: 'GET',
+            credentials: 'omit', // CRITICAL: Prevent sending cookies to avoid auth errors
+            redirect: 'follow',  // Follow redirects from script.google.com
+            referrerPolicy: 'no-referrer', // CRITICAL: Often needed for GAS Web Apps to allow CORS
+          });
+          if (response.ok) break;
+        } catch (e) {
+          error = e;
+          console.warn(`Sheet API: Percobaan ke-${i+1} gagal.`);
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw error || new Error(`HTTP Error ${response?.status}`);
+      }
+
       const text = await response.text();
       
       // Jika Google mengalihkan ke halaman login/error
@@ -38,7 +83,7 @@ export const sheetApi = {
 
       try {
         const data = JSON.parse(text);
-        console.log("Sheet API: Data Cloud berhasil diterima.");
+        console.log("Sheet API: Data Cloud berhasil diterima.", Object.keys(data));
         return data;
       } catch (parseError) {
         console.error("Sheet API Error: Format JSON tidak valid.", text.substring(0, 100));
@@ -50,17 +95,21 @@ export const sheetApi = {
     }
   },
 
-  // Save specific key-value pair to the sheet (Legacy / Backup Mode)
+  // Save specific key-value pair to the sheet (Key-Value Store Mode)
   save: async (key: string, value: any) => {
     if (!sheetApi.isConfigured()) return;
     
     try {
-      await fetch(SHEET_URL!, {
+      // Use 'no-cors' mode for POST to handle Google Apps Script redirects without CORS errors.
+      await fetch(getSheetUrl(), {
         method: 'POST',
         mode: 'no-cors', 
-        headers: { 'Content-Type': 'text/plain' },
+        credentials: 'omit', 
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain' }, 
         body: JSON.stringify({ key, value }),
       });
+      
       console.log(`Sheet API: Data '${key}' dikirim ke Spreadsheet.`);
       return { status: 'sent' };
     } catch (error) {
@@ -69,16 +118,18 @@ export const sheetApi = {
     }
   },
 
-  // NEW: Export formatted tables to specific sheets
+  // Export formatted tables (Migration Mode)
   exportTables: async (tables: Record<string, any[]>) => {
     if (!sheetApi.isConfigured()) return;
 
     try {
       console.log("Sheet API: Mengirim tabel terstruktur...");
-      await fetch(SHEET_URL!, {
+      await fetch(getSheetUrl(), {
         method: 'POST',
         mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
+        credentials: 'omit',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain' }, 
         body: JSON.stringify({ 
           type: 'export_tables', 
           data: tables 
