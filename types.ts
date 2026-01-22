@@ -188,4 +188,13 @@ export interface SettingsPanelProps {
   onEditStudent?: (student: Student) => void;
   onDeleteStudent?: (id: string) => void;
   onBulkAddStudents?: (students: Student[]) => void;
+  // Restore
+  onRestore?: (data: any) => void;
+  // Full Data for Export
+  teachingMaterials?: TeachingMaterial[];
+  teachingJournals?: TeachingJournal[];
+  studentGrades?: GradeRecord[];
+  homeroomRecords?: HomeroomRecord[];
+  attitudeRecords?: AttitudeRecord[];
+  teacherAgendas?: TeacherAgenda[];
 }

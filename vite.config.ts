@@ -16,7 +16,8 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_FB_PROJECT_ID': JSON.stringify(env.VITE_FB_PROJECT_ID || ""),
       'process.env.VITE_FB_STORAGE_BUCKET': JSON.stringify(env.VITE_FB_STORAGE_BUCKET || ""),
       'process.env.VITE_FB_MESSAGING_SENDER_ID': JSON.stringify(env.VITE_FB_MESSAGING_SENDER_ID || ""),
-      'process.env.VITE_FB_APP_ID': JSON.stringify(env.VITE_FB_APP_ID || "")
+      'process.env.VITE_FB_APP_ID': JSON.stringify(env.VITE_FB_APP_ID || ""),
+      'process.env.VITE_SHEET_URL': JSON.stringify(env.VITE_SHEET_URL || "")
     },
     build: {
       outDir: 'dist',

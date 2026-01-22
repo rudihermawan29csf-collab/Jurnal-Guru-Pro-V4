@@ -141,13 +141,12 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
   const handleDownloadExcel = () => {
     // Flatten data for Excel
     const excelData = filteredData.map(row => ({
-      "No": row.no || '',
-      "Nama Guru": row.name || '',
+      "NO": row.no || '',
+      "NAMA GURU": row.name || '',
       "NIP": row.nip || '',
-      "Pangkat": row.rank || '',
-      "Golongan": row.gol || '',
-      "Mata Pelajaran": row.subject || '',
-      "Kode Mapel": row.code || '',
+      "PANGKAT/GOL": `${row.rank || '-'} / ${row.gol || '-'}`,
+      "MATA PEL": row.subject || '',
+      "KODE": row.code || '',
       "VII A": row.hoursVII?.A || 0,
       "VII B": row.hoursVII?.B || 0,
       "VII C": row.hoursVII?.C || 0,
@@ -157,9 +156,9 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
       "IX A": row.hoursIX?.A || 0,
       "IX B": row.hoursIX?.B || 0,
       "IX C": row.hoursIX?.C || 0,
-      "Tugas Tambahan": row.additionalTask || '',
-      "Jam Tambahan": row.additionalHours || 0,
-      "Total Jam": row.totalHours || 0
+      "TUGAS TAMBAHAN": row.additionalTask || '',
+      "JAM TAMBAHAN": row.additionalHours || 0,
+      "TOTAL JAM": row.totalHours || 0
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -167,13 +166,12 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
     XLSX.utils.book_append_sheet(workbook, worksheet, "Pembagian Tugas");
     
     // Auto-width columns
-    const max_width = excelData.reduce((w, r) => Math.max(w, r["Nama Guru"].length), 10);
+    const max_width = excelData.reduce((w, r) => Math.max(w, r["NAMA GURU"].length), 10);
     worksheet["!cols"] = [
       { wch: 5 }, // No
       { wch: max_width }, // Nama
       { wch: 20 }, // NIP
-      { wch: 15 }, // Pangkat
-      { wch: 8 }, // Gol
+      { wch: 15 }, // Pangkat/Gol
       { wch: 20 }, // Mapel
       { wch: 10 }, // Kode
       // Classes
@@ -206,7 +204,7 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
             // Mapping flexible headers
             const no = row['No'] || row['NO'] || String(index + 1);
             const name = row['Nama Guru'] || row['NAMA GURU'] || row['Nama'] || row['NAMA'] || 'Guru Baru';
-            const subject = row['Mata Pelajaran'] || row['MATA PELAJARAN'] || row['Mata Pel'] || row['MATA PEL'] || row['Mapel'] || '-';
+            const subject = row['Mata Pelajaran'] || row['MATA PELAJARAN'] || row['MATA PEL'] || row['Mapel'] || '-';
             
             // Handle Pangkat/Gol which might be merged or separate
             let rank = row['Pangkat'] || row['PANGKAT'] || '-';
@@ -214,13 +212,8 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
             
             const mergedPangkatGol = row['Pangkat/Gol'] || row['PANGKAT/GOL'] || row['Pangkat / Gol'] || '';
             if (mergedPangkatGol) {
-                // Try to split logic or just assign
                 const parts = mergedPangkatGol.split('/');
                 if (parts.length > 1) {
-                    // Assume part 1 is Rank (if long) or Gol (if short like III/a)?
-                    // Usually Pangkat/Gol format: "Pembina / IV a"
-                    // Let's just keep it simple or try to parse
-                    // For now, let's put the whole thing in Rank or split if slash present
                     rank = parts[0].trim();
                     gol = parts.slice(1).join('/').trim();
                 } else {
@@ -247,7 +240,7 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
                 hoursIX: { A: row['IX A']||0, B: row['IX B']||0, C: row['IX C']||0 },
                 additionalTask: row['Tugas Tambahan'] || row['TUGAS TAMBAHAN'] || '-',
                 additionalHours: Number(row['Jam Tamb'] || row['Jam Tambahan'] || 0),
-                totalHours: 0 // Will be recalculated or trusted from excel if needed, but let's recalculate in app logic usually
+                totalHours: 0 
             };
         });
         

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import TeacherTable from './components/TeacherTable';
 import ScheduleTable from './components/ScheduleTable';
 import GeminiAssistant from './components/GeminiAssistant';
@@ -7,30 +7,16 @@ import ClassTeacherSchedule from './components/ClassTeacherSchedule';
 import LoginPage from './components/LoginPage';
 import SettingsPanel from './components/SettingsPanel';
 import { ViewMode, TeacherData, UserRole, AppSettings, AuthSettings, CalendarEvent, TeacherLeave, TeachingMaterial, TeachingJournal, Student, GradeRecord, HomeroomRecord, AttitudeRecord, TeacherAgenda } from './types';
-import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS, DEFAULT_SCHEDULE_MAP } from './constants';
+import { TEACHER_DATA as INITIAL_DATA, INITIAL_STUDENTS, DEFAULT_SCHEDULE_MAP, INITIAL_APP_SETTINGS, INITIAL_JOURNALS, INITIAL_AGENDAS, INITIAL_ATTITUDE, INITIAL_HOMEROOM, INITIAL_GRADES, INITIAL_MATERIALS, INITIAL_LEAVES } from './constants';
 import { Table as TableIcon, Search, Calendar, Ban, CalendarClock, Settings, Menu, LogOut, ChevronDown, BookOpen, Users, GraduationCap, ClipboardList, User, Cloud, CloudOff, RefreshCw, AlertCircle, Heart, FileText, CheckCircle2, Loader2, Zap } from 'lucide-react';
-import { firebaseApi } from './services/firebaseService';
 
 const App: React.FC = () => {
   // --- AUTH STATE ---
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [currentUser, setCurrentUser] = useState<string>(''); 
 
-  // --- SYNC STATE ---
-  const [isCloudConfigured, setIsCloudConfigured] = useState(firebaseApi.isConfigured());
-  const [isSaving, setIsSaving] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [isDataLoaded, setIsDataLoaded] = useState(false); // New state to prevent overwrite on load
-
   // --- DATA STATES ---
-  const [appSettings, setAppSettings] = useState<AppSettings>({
-    academicYear: '2025/2026',
-    semester: 'Genap',
-    lastUpdated: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-    logoUrl: 'https://iili.io/fGvdYoQ.png',
-    headmaster: 'Didik Sulistyo, M.M.Pd',
-    headmasterNip: '196605181989011002'
-  });
+  const [appSettings, setAppSettings] = useState<AppSettings>(INITIAL_APP_SETTINGS);
   const [authSettings, setAuthSettings] = useState<AuthSettings>({ adminPassword: '', teacherPasswords: {}, classPasswords: {} });
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.TABLE);
   const [searchTerm, setSearchTerm] = useState('');
@@ -38,98 +24,36 @@ const App: React.FC = () => {
   const [scheduleMap, setScheduleMap] = useState<Record<string, string>>(DEFAULT_SCHEDULE_MAP);
   const [unavailableConstraints, setUnavailableConstraints] = useState<Record<string, string[]>>({});
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
-  const [teacherLeaves, setTeacherLeaves] = useState<TeacherLeave[]>([]);
+  const [teacherLeaves, setTeacherLeaves] = useState<TeacherLeave[]>(INITIAL_LEAVES);
   const [students, setStudents] = useState<Student[]>(INITIAL_STUDENTS);
-  const [teachingMaterials, setTeachingMaterials] = useState<TeachingMaterial[]>([]);
-  const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>([]);
-  const [studentGrades, setStudentGrades] = useState<GradeRecord[]>([]);
-  const [homeroomRecords, setHomeroomRecords] = useState<HomeroomRecord[]>([]);
-  const [attitudeRecords, setAttitudeRecords] = useState<AttitudeRecord[]>([]);
-  const [teacherAgendas, setTeacherAgendas] = useState<TeacherAgenda[]>([]);
+  const [teachingMaterials, setTeachingMaterials] = useState<TeachingMaterial[]>(INITIAL_MATERIALS);
+  const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>(INITIAL_JOURNALS);
+  const [studentGrades, setStudentGrades] = useState<GradeRecord[]>(INITIAL_GRADES);
+  const [homeroomRecords, setHomeroomRecords] = useState<HomeroomRecord[]>(INITIAL_HOMEROOM);
+  const [attitudeRecords, setAttitudeRecords] = useState<AttitudeRecord[]>(INITIAL_ATTITUDE);
+  const [teacherAgendas, setTeacherAgendas] = useState<TeacherAgenda[]>(INITIAL_AGENDAS);
 
   // UI STATES
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const isInitialMount = useRef(true);
 
-  // --- REAL-TIME SYNC LISTENER ---
-  useEffect(() => {
-    if (firebaseApi.isConfigured()) {
-      const unsubscribe = firebaseApi.subscribe((cloudData) => {
-        // Mark data as loaded immediately to allow saving (if needed)
-        // But more importantly, to know we have connected.
-        setIsDataLoaded(true);
-
-        if (!cloudData) return;
-        
-        console.log("🔥 Data Cloud Updated!");
-        if (cloudData.appSettings) setAppSettings(cloudData.appSettings);
-        if (cloudData.authSettings) setAuthSettings(cloudData.authSettings);
-        if (cloudData.teacherData) setTeachers(cloudData.teacherData);
-        if (cloudData.scheduleMap) setScheduleMap(cloudData.scheduleMap);
-        if (cloudData.unavailableConstraints) setUnavailableConstraints(cloudData.unavailableConstraints);
-        if (cloudData.calendarEvents) setCalendarEvents(cloudData.calendarEvents);
-        if (cloudData.teacherLeaves) setTeacherLeaves(cloudData.teacherLeaves);
-        if (cloudData.students) setStudents(cloudData.students);
-        if (cloudData.teachingMaterials) setTeachingMaterials(cloudData.teachingMaterials);
-        if (cloudData.teachingJournals) setTeachingJournals(cloudData.teachingJournals);
-        if (cloudData.studentGrades) setStudentGrades(cloudData.studentGrades);
-        if (cloudData.homeroomRecords) setHomeroomRecords(cloudData.homeroomRecords);
-        if (cloudData.attitudeRecords) setAttitudeRecords(cloudData.attitudeRecords);
-        if (cloudData.teacherAgendas) setTeacherAgendas(cloudData.teacherAgendas);
-      });
-      return () => unsubscribe();
-    }
-  }, []);
-
-  // --- PERSISTENCE HANDLERS (Save only from Admin or Current User Change) ---
-  const saveToCloud = useCallback(async (key: string, value: any) => {
-    if (isInitialMount.current) return;
-    if (!isCloudConfigured) return;
-    // CRITICAL: Prevent saving if we haven't loaded data from cloud yet.
-    // This stops empty local state from overwriting cloud data on startup.
-    if (!isDataLoaded) {
-        console.warn("Skipping save: Cloud data not yet loaded.");
-        return;
-    }
-    
-    setIsSaving(true);
-    try {
-      await firebaseApi.save(key, value);
-      setTimeout(() => setIsSaving(false), 500);
-    } catch (err) {
-      console.error("Sync error:", err);
-      setSyncError("Penyimpanan Gagal");
-      setIsSaving(false);
-    }
-  }, [isCloudConfigured, isDataLoaded]);
-
-  useEffect(() => { 
-    if (isInitialMount.current) {
-        isInitialMount.current = false;
-        return;
-    }
-    // Debounce Save to Cloud
-    const timer = setTimeout(() => {
-        if (userRole === 'ADMIN' || userRole === 'TEACHER') { // Hanya login user yang boleh tulis
-            saveToCloud('appSettings', appSettings);
-            saveToCloud('authSettings', authSettings);
-            saveToCloud('teacherData', teachers);
-            saveToCloud('scheduleMap', scheduleMap);
-            saveToCloud('unavailableConstraints', unavailableConstraints);
-            saveToCloud('calendarEvents', calendarEvents);
-            saveToCloud('teacherLeaves', teacherLeaves);
-            saveToCloud('students', students);
-            saveToCloud('teachingMaterials', teachingMaterials);
-            saveToCloud('teachingJournals', teachingJournals);
-            saveToCloud('studentGrades', studentGrades);
-            saveToCloud('homeroomRecords', homeroomRecords);
-            saveToCloud('attitudeRecords', attitudeRecords);
-            saveToCloud('teacherAgendas', teacherAgendas);
-        }
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [appSettings, authSettings, teachers, scheduleMap, unavailableConstraints, calendarEvents, teacherLeaves, students, teachingMaterials, teachingJournals, studentGrades, homeroomRecords, attitudeRecords, teacherAgendas, userRole, saveToCloud]);
+  // RESTORE HANDLER
+  const handleRestore = (data: any) => {
+      if (data.appSettings) setAppSettings(data.appSettings);
+      if (data.authSettings) setAuthSettings(data.authSettings);
+      if (data.teacherData) setTeachers(data.teacherData);
+      if (data.scheduleMap) setScheduleMap(data.scheduleMap);
+      if (data.unavailableConstraints) setUnavailableConstraints(data.unavailableConstraints);
+      if (data.calendarEvents) setCalendarEvents(data.calendarEvents);
+      if (data.teacherLeaves) setTeacherLeaves(data.teacherLeaves);
+      if (data.students) setStudents(data.students);
+      if (data.teachingMaterials) setTeachingMaterials(data.teachingMaterials);
+      if (data.teachingJournals) setTeachingJournals(data.teachingJournals);
+      if (data.studentGrades) setStudentGrades(data.studentGrades);
+      if (data.homeroomRecords) setHomeroomRecords(data.homeroomRecords);
+      if (data.attitudeRecords) setAttitudeRecords(data.attitudeRecords);
+      if (data.teacherAgendas) setTeacherAgendas(data.teacherAgendas);
+  };
 
   // --- HANDLERS ---
   const handleLogin = (role: UserRole, username?: string) => {
@@ -175,22 +99,7 @@ const App: React.FC = () => {
                 <h2 className="text-base font-bold text-indigo-700 leading-tight mt-1">SMPN 3 Pacet</h2>
                 <div className="flex flex-col mt-1">
                    <p className="text-[10px] text-gray-500 font-bold uppercase">TA {appSettings.academicYear} • {appSettings.semester}</p>
-                   {isCloudConfigured ? (
-                      <div className="flex items-center gap-3">
-                        <div className={`flex items-center gap-1 mt-1 text-[10px] font-bold ${syncError ? 'text-red-500' : 'text-orange-500'}`}>
-                           <Zap size={10} fill="currentColor" />
-                           <span>Firebase Real-time: ON</span>
-                        </div>
-                        {isSaving && (
-                           <div className="flex items-center gap-1 mt-1 text-[10px] font-bold text-indigo-500 animate-pulse">
-                              <Loader2 size={10} className="animate-spin" />
-                              <span>Sync...</span>
-                           </div>
-                        )}
-                      </div>
-                   ) : (
-                      <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-400 font-bold"><CloudOff size={10} /><span>Cloud Not Configured</span></div>
-                   )}
+                   <div className="flex items-center gap-1 mt-1 text-[10px] text-green-600 font-bold"><Zap size={10} fill="currentColor" /><span>App Ready (Local Mode)</span></div>
                 </div>
               </div>
             </div>
@@ -260,7 +169,36 @@ const App: React.FC = () => {
                 initialTab={viewMode === ViewMode.JOURNAL ? 'JOURNAL' : viewMode === ViewMode.MONITORING ? 'MONITORING' : viewMode === ViewMode.GRADES ? 'GRADES' : viewMode === ViewMode.HOMEROOM ? 'HOMEROOM' : viewMode === ViewMode.ATTITUDE ? 'ATTITUDE' : viewMode === ViewMode.TEACHER_SCHEDULE ? 'TEACHER' : viewMode === ViewMode.AGENDA ? 'AGENDA' : 'CLASS'} 
              />
           )}
-          {viewMode === ViewMode.SETTINGS && userRole === 'ADMIN' && <SettingsPanel settings={appSettings} onSave={setAppSettings} authSettings={authSettings} onSaveAuth={setAuthSettings} teacherData={teachers} teacherLeaves={teacherLeaves} onToggleLeave={l => setTeacherLeaves([...teacherLeaves, {...l, id: Date.now().toString()}])} onEditLeave={l => setTeacherLeaves(teacherLeaves.map(x => x.id === l.id ? l : x))} onDeleteLeave={id => setTeacherLeaves(teacherLeaves.filter(x => x.id !== id))} calendarEvents={calendarEvents} onUpdateCalendar={setCalendarEvents} unavailableConstraints={unavailableConstraints} onToggleConstraint={(c, d) => setUnavailableConstraints(prev => ({ ...prev, [c]: (prev[c] || []).includes(d) ? prev[c].filter(x => x !== d) : [...(prev[c] || []), d] }))} students={students} onAddStudent={s => setStudents([...students, s])} onEditStudent={s => setStudents(students.map(x => x.id === s.id ? s : x))} onDeleteStudent={id => setStudents(students.filter(x => x.id !== id))} onBulkAddStudents={s => setStudents([...students, ...s])} />}
+          {viewMode === ViewMode.SETTINGS && userRole === 'ADMIN' && (
+            <SettingsPanel 
+                settings={appSettings} 
+                onSave={setAppSettings} 
+                authSettings={authSettings} 
+                onSaveAuth={setAuthSettings} 
+                teacherData={teachers} 
+                teacherLeaves={teacherLeaves} 
+                onToggleLeave={l => setTeacherLeaves([...teacherLeaves, {...l, id: Date.now().toString()}])} 
+                onEditLeave={l => setTeacherLeaves(teacherLeaves.map(x => x.id === l.id ? l : x))} 
+                onDeleteLeave={id => setTeacherLeaves(teacherLeaves.filter(x => x.id !== id))} 
+                calendarEvents={calendarEvents} 
+                onUpdateCalendar={setCalendarEvents} 
+                unavailableConstraints={unavailableConstraints} 
+                onToggleConstraint={(c, d) => setUnavailableConstraints(prev => ({ ...prev, [c]: (prev[c] || []).includes(d) ? prev[c].filter(x => x !== d) : [...(prev[c] || []), d] }))} 
+                students={students} 
+                onAddStudent={s => setStudents([...students, s])} 
+                onEditStudent={s => setStudents(students.map(x => x.id === s.id ? s : x))} 
+                onDeleteStudent={id => setStudents(students.filter(x => x.id !== id))} 
+                onBulkAddStudents={s => setStudents([...students, ...s])} 
+                onRestore={handleRestore}
+                // Passing Full Data for Export
+                teachingMaterials={teachingMaterials}
+                teachingJournals={teachingJournals}
+                studentGrades={studentGrades}
+                homeroomRecords={homeroomRecords}
+                attitudeRecords={attitudeRecords}
+                teacherAgendas={teacherAgendas}
+            />
+          )}
         </div>
       </main>
 
