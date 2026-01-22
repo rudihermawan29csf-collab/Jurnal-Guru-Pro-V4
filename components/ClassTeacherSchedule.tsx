@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Download, PenTool, BookOpen, Plus, X, List, Edit2, Filter, ChevronDown,
-  User, Users, Calendar, Layout, Search, GraduationCap, ClipboardList, Trash2, FileSpreadsheet, Heart, CheckCircle2, AlertCircle, Save, Check, UserMinus, Printer, FileText, Clock, Sparkles
+  User, Users, Calendar, Layout, Search, GraduationCap, ClipboardList, Trash2, FileSpreadsheet, Heart, CheckCircle2, AlertCircle, Save, Check, UserMinus, Printer, FileText, Clock, Sparkles, Camera, Image as ImageIcon
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -32,6 +32,7 @@ interface ClassTeacherScheduleProps {
   onDeleteJournal?: (id: string) => void;
   studentGrades?: GradeRecord[];
   onUpdateGrade?: (grade: GradeRecord) => void;
+  onSaveGrades?: (grades: GradeRecord[]) => void;
   homeroomRecords?: HomeroomRecord[];
   onAddHomeroomRecord?: (record: HomeroomRecord) => void;
   onEditHomeroomRecord?: (record: HomeroomRecord) => void;
@@ -135,6 +136,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   onDeleteJournal,
   studentGrades = [],
   onUpdateGrade,
+  onSaveGrades,
   homeroomRecords = [],
   onAddHomeroomRecord,
   onEditHomeroomRecord,
@@ -198,10 +200,10 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     subject: '', semester: appSettings.semester === 'Genap' ? '2' : '1', classes: [], chapter: '', subChapters: ['']
   });
 
-  const [jourForm, setJourForm] = useState<{ date: string; semester: '1' | '2'; jamKe: string; className: string; subject: string; chapter: string; subChapters: string[]; activity: string; notes: string; studentAttendance: Record<string, 'H' | 'S' | 'I' | 'A' | 'DL'>; }>({
+  const [jourForm, setJourForm] = useState<{ date: string; semester: '1' | '2'; jamKe: string; className: string; subject: string; chapter: string; subChapters: string[]; activity: string; notes: string; studentAttendance: Record<string, 'H' | 'S' | 'I' | 'A' | 'DL'>; photos: string[]; }>({
     date: new Date().toISOString().split('T')[0],
     semester: appSettings.semester === 'Genap' ? '2' : '1',
-    jamKe: '', className: '', subject: '', chapter: '', subChapters: [], activity: '', notes: '', studentAttendance: {}
+    jamKe: '', className: '', subject: '', chapter: '', subChapters: [], activity: '', notes: '', studentAttendance: {}, photos: []
   });
 
   // Agenda States
@@ -222,6 +224,15 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [gradeSubject, setGradeSubject] = useState('');
   const [gradeSemester, setGradeSemester] = useState(appSettings.semester);
   const [numChapters, setNumChapters] = useState<number>(5);
+  // Local state for grades to support bulk save
+  const [localGrades, setLocalGrades] = useState<GradeRecord[]>(studentGrades || []);
+
+  // Sync localGrades when studentGrades prop changes (e.g. initial load or after save)
+  useEffect(() => {
+    if (studentGrades) {
+        setLocalGrades(studentGrades);
+    }
+  }, [studentGrades]);
 
   // Homeroom States
   const [homeroomForm, setHomeroomForm] = useState<{ date: string; className: string; studentIds: string[]; violationType: string; solution: string; notes: string; }>({
@@ -353,6 +364,65 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
     }));
   };
 
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    
+    // Explicitly cast to File[] to fix TS error
+    const files = Array.from(e.target.files) as File[];
+    // Limit total to 4
+    const currentCount = jourForm.photos.length;
+    const remaining = 4 - currentCount;
+    
+    if (remaining <= 0) {
+        alert("Maksimal 4 foto dokumentasi.");
+        return;
+    }
+
+    const filesToProcess = files.slice(0, remaining);
+    const newPhotos: string[] = [];
+
+    for (const file of filesToProcess) {
+        // Basic validation
+        if (!file.type.startsWith('image/')) continue;
+
+        // Resize and Convert to Base64
+        const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    // Resize logic: Max width 300px
+                    const MAX_WIDTH = 300;
+                    const scale = MAX_WIDTH / img.width;
+                    canvas.width = MAX_WIDTH;
+                    canvas.height = img.height * scale;
+                    
+                    const ctx = canvas.getContext('2d');
+                    ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    // Compress to JPEG 0.6
+                    resolve(canvas.toDataURL('image/jpeg', 0.6));
+                };
+                img.src = event.target?.result as string;
+            };
+            reader.readAsDataURL(file);
+        });
+        newPhotos.push(base64);
+    }
+
+    setJourForm(prev => ({...prev, photos: [...prev.photos, ...newPhotos]}));
+    
+    // Reset input
+    e.target.value = '';
+  };
+
+  const removePhoto = (index: number) => {
+    setJourForm(prev => ({
+        ...prev,
+        photos: prev.photos.filter((_, i) => i !== index)
+    }));
+  };
+
   const saveJournal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || !onAddJournal || !jourForm.className) {
@@ -366,7 +436,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
       subChapter: jourForm.subChapters.join(', ')
     };
     if (editingJournalId && onEditJournal) onEditJournal(journalData); else onAddJournal(journalData);
-    setJourForm(prev => ({ ...prev, jamKe: '', className: '', chapter: '', subChapters: [], activity: '', notes: '', studentAttendance: {} }));
+    setJourForm(prev => ({ ...prev, jamKe: '', className: '', chapter: '', subChapters: [], activity: '', notes: '', studentAttendance: {}, photos: [] }));
     setEditingJournalId(null);
     alert("Jurnal berhasil disimpan!");
   };
@@ -1061,6 +1131,45 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                             ))}
                           </div>
                         </div>
+
+                        {/* Dokumentasi Foto */}
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 flex items-center gap-2">
+                            Foto Dokumentasi (Max 4) <Camera size={12} className="text-blue-500"/>
+                          </label>
+                          <div className="flex flex-col gap-2">
+                            <label className="flex items-center justify-center gap-2 p-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+                                <ImageIcon size={18} className="text-gray-400" />
+                                <span className="text-xs text-gray-500 font-bold">Klik untuk upload foto</span>
+                                <input 
+                                    type="file" 
+                                    multiple 
+                                    accept="image/*"
+                                    onChange={handlePhotoUpload}
+                                    className="hidden" 
+                                />
+                            </label>
+                            
+                            {/* Photo Preview Grid */}
+                            {jourForm.photos && jourForm.photos.length > 0 && (
+                                <div className="grid grid-cols-4 gap-2 mt-2">
+                                    {jourForm.photos.map((photo, idx) => (
+                                        <div key={idx} className="relative group w-full h-16 rounded overflow-hidden border border-gray-200">
+                                            <img src={photo} alt={`Doc ${idx+1}`} className="w-full h-full object-cover" />
+                                            <button 
+                                                type="button" 
+                                                onClick={() => removePhoto(idx)}
+                                                className="absolute top-0 right-0 bg-red-500 text-white p-0.5 rounded-bl hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <p className="text-[9px] text-gray-400 italic text-right">{jourForm.photos.length} / 4 foto terpilih</p>
+                          </div>
+                        </div>
                     </div>
                   </div>
 
@@ -1094,7 +1203,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                   </div>
                   
                   <div className="flex gap-3 justify-end">
-                    {editingJournalId && <button type="button" onClick={() => {setEditingJournalId(null); setJourForm({...jourForm, activity: '', notes: '', subChapters: [], studentAttendance: {}});}} className="px-6 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold">Batal</button>}
+                    {editingJournalId && <button type="button" onClick={() => {setEditingJournalId(null); setJourForm({...jourForm, activity: '', notes: '', subChapters: [], studentAttendance: {}, photos: []});}} className="px-6 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold">Batal</button>}
                     <button type="submit" className="px-10 py-3 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2"><Save size={18}/> Simpan Jurnal & Absensi</button>
                   </div>
                 </form>
@@ -1148,6 +1257,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                           <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 uppercase">Mata Pelajaran / Materi</th>
                           <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 uppercase">Kegiatan</th>
                           <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 uppercase">Absensi (Nama Siswa)</th>
+                          <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 uppercase w-16">Foto</th>
                           <th className="px-3 py-3 text-left text-[10px] font-bold text-gray-500 uppercase">Catatan</th>
                           <th className="px-3 py-3 text-center text-[10px] font-bold text-gray-500 uppercase w-16">Aksi</th>
                         </tr>
@@ -1170,6 +1280,19 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                               <td className="px-3 py-2 text-xs max-w-[150px]">
                                 <span className={`px-2 py-0.5 rounded-lg font-medium text-[9px] block ${absText === 'Nihil' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>{absText}</span>
                               </td>
+                              <td className="px-3 py-2 text-xs">
+                                {j.photos && j.photos.length > 0 ? (
+                                    <div className="flex -space-x-2 overflow-hidden hover:space-x-1 transition-all">
+                                        {j.photos.map((p, i) => (
+                                            <div key={i} className="w-8 h-8 rounded border border-white shadow-sm overflow-hidden relative group/img cursor-pointer">
+                                                <img src={p} alt="Dok" className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors"></div>
+                                                {/* Hover Preview could be implemented here */}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : <span className="text-[10px] text-gray-400">-</span>}
+                              </td>
                               <td className="px-3 py-2 text-xs max-w-[150px]"><p className="line-clamp-2 text-gray-500">{j.notes || '-'}</p></td>
                               <td className="px-3 py-2 text-center">
                                 <div className="flex justify-center gap-1">
@@ -1179,7 +1302,8 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                                       setJourForm({
                                         date: j.date, semester: j.semester, jamKe: j.jamKe, className: j.className, subject: j.subject || '', chapter: j.chapter,
                                         subChapters: typeof j.subChapter === 'string' ? j.subChapter.split(', ') : [],
-                                        activity: j.activity, notes: j.notes, studentAttendance: j.studentAttendance || {}
+                                        activity: j.activity, notes: j.notes, studentAttendance: j.studentAttendance || {},
+                                        photos: j.photos || []
                                       });
                                       window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }} 
@@ -1191,7 +1315,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                             </tr>
                           );
                         })}
-                        {filteredJournals.length === 0 && <tr><td colSpan={7} className="py-10 text-center text-gray-400 italic">Tidak ada data jurnal ditemukan.</td></tr>}
+                        {filteredJournals.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-gray-400 italic">Tidak ada data jurnal ditemukan.</td></tr>}
                       </tbody>
                    </table>
                 </div>
@@ -1334,42 +1458,64 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const renderGradesTab = () => {
     const filteredStudents = students.filter(s => s.className === gradeClass);
     const handleGradeChange = (studentId: string, field: string, value: string, chapterIdx?: number) => {
-        if (!onUpdateGrade) return;
-        const recordId = `${studentId}_${gradeSubject}_${gradeSemester}`;
-        const existingRecord = studentGrades.find(r => r.id === recordId) || { id: recordId, studentId, teacherName: currentUser, subject: gradeSubject, className: gradeClass, semester: gradeSemester, academicYear: appSettings.academicYear, chapters: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } };
-        const numVal = parseFloat(value); const newRecord = { ...existingRecord };
-        
-        if (chapterIdx) {
-            const chIdx = chapterIdx as 1|2|3|4|5; 
-            const ch = { ...newRecord.chapters[chIdx] };
-            (ch as any)[field] = isNaN(numVal) ? undefined : numVal;
+        setLocalGrades(prevGrades => {
+            const recordId = `${studentId}_${gradeSubject}_${gradeSemester}`;
+            const existingRecord = prevGrades.find(r => r.id === recordId) || { 
+                id: recordId, 
+                studentId, 
+                teacherName: currentUser, 
+                subject: gradeSubject, 
+                className: gradeClass, 
+                semester: gradeSemester, 
+                academicYear: appSettings.academicYear, 
+                chapters: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {} } 
+            };
             
-            // Sertakan ch.sum ke dalam scoreFields untuk perhitungan Rata-Rata (RR) Bab
-            const scoreFields = [ch.f1, ch.f2, ch.f3, ch.f4, ch.f5, ch.sum].filter((n) => typeof n === 'number' && !isNaN(n)) as number[];
+            const newRecord = JSON.parse(JSON.stringify(existingRecord)); // Deep copy safely
+            const numVal = parseFloat(value);
             
-            if (scoreFields.length > 0) { 
-                const sumScores = scoreFields.reduce((a, b) => a + b, 0); 
-                ch.avg = parseFloat((sumScores / scoreFields.length).toFixed(2)); 
-            } else { 
-                ch.avg = undefined; 
+            if (chapterIdx) {
+                // ... update chapter ...
+                const chIdx = chapterIdx as 1|2|3|4|5;
+                const ch = newRecord.chapters[chIdx] || {};
+                (ch as any)[field] = isNaN(numVal) ? undefined : numVal;
+                
+                // Recalc avg
+                const scoreFields = [ch.f1, ch.f2, ch.f3, ch.f4, ch.f5, ch.sum].filter((n: any) => typeof n === 'number' && !isNaN(n)) as number[];
+                if (scoreFields.length > 0) {
+                    const sumScores = scoreFields.reduce((a, b) => a + b, 0);
+                    ch.avg = parseFloat((sumScores / scoreFields.length).toFixed(2));
+                } else {
+                    ch.avg = undefined;
+                }
+                newRecord.chapters[chIdx] = ch;
+            } else {
+                (newRecord as any)[field] = isNaN(numVal) ? undefined : numVal;
             }
-            newRecord.chapters[chIdx] = ch;
-        } else { (newRecord as any)[field] = isNaN(numVal) ? undefined : numVal; }
 
-        // Recalculate Final Grade considering only visible chapters
-        const activeChapterIndices = Array.from({length: numChapters}, (_, i) => (i + 1) as 1|2|3|4|5);
-        const chapterAvgs = activeChapterIndices
-            .map(idx => newRecord.chapters[idx]?.avg)
-            .filter(n => typeof n === 'number') as number[];
+            // Recalc final grade
+            const activeChapterIndices = Array.from({length: numChapters}, (_, i) => (i + 1) as 1|2|3|4|5);
+            const chapterAvgs = activeChapterIndices
+                .map(idx => newRecord.chapters[idx]?.avg)
+                .filter(n => typeof n === 'number') as number[];
+            const sts = newRecord.sts || 0;
+            const sas = newRecord.sas || 0;
             
-        const sts = newRecord.sts || 0; 
-        const sas = newRecord.sas || 0;
-        
-        if (chapterAvgs.length > 0 || sts > 0 || sas > 0) { 
-            const avgRR = chapterAvgs.length > 0 ? chapterAvgs.reduce((a, b) => a + b, 0) / chapterAvgs.length : 0;
-            newRecord.finalGrade = parseFloat(((avgRR + sts + sas) / 3).toFixed(2)); 
-        }
-        onUpdateGrade(newRecord as GradeRecord);
+            if (chapterAvgs.length > 0 || sts > 0 || sas > 0) {
+                const avgRR = chapterAvgs.length > 0 ? chapterAvgs.reduce((a, b) => a + b, 0) / chapterAvgs.length : 0;
+                newRecord.finalGrade = parseFloat(((avgRR + sts + sas) / 3).toFixed(2));
+            } else {
+                newRecord.finalGrade = undefined;
+            }
+
+            // Update array
+            const exists = prevGrades.some(r => r.id === recordId);
+            if (exists) {
+                return prevGrades.map(r => r.id === recordId ? newRecord : r);
+            } else {
+                return [...prevGrades, newRecord];
+            }
+        });
     };
 
     return (
@@ -1391,6 +1537,17 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => { 
+                        if(onSaveGrades) { 
+                            onSaveGrades(localGrades); 
+                            alert("Data nilai disimpan locally & disinkronkan ke cloud."); 
+                        } 
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 shadow-sm transition-colors"
+                  >
+                    <Save size={16} /> Simpan Nilai
+                  </button>
                   <div className="relative" ref={gradesDownloadRef}>
                     <button onClick={() => setIsGradesDownloadOpen(!isGradesDownloadOpen)} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-bold hover:bg-gray-50 transition-colors">
                       <Download size={16}/> Export <ChevronDown size={16}/>
@@ -1420,7 +1577,7 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                     <tbody className="bg-white divide-y divide-gray-200">
                         {filteredStudents.map((student, idx) => {
                             const recordId = `${student.id}_${gradeSubject}_${gradeSemester}`; 
-                            const record = (studentGrades.find(r => r.id === recordId) || { chapters: {1:{},2:{},3:{},4:{},5:{}} }) as GradeRecord;
+                            const record = (localGrades.find(r => r.id === recordId) || { chapters: {1:{},2:{},3:{},4:{},5:{}} }) as GradeRecord;
                             return (
                                 <tr key={student.id} className="hover:bg-gray-50">
                                     <td className="px-2 py-2 text-center text-gray-500 border-r sticky left-0 z-10 bg-white">{idx + 1}</td>

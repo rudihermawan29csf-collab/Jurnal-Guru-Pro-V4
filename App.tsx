@@ -238,6 +238,7 @@ const App: React.FC = () => {
                 onDeleteJournal={id => setTeachingJournalsSync(teachingJournals.filter(x => x.id !== id))} 
                 studentGrades={studentGrades} 
                 onUpdateGrade={g => setStudentGradesSync((prev: GradeRecord[]) => prev.find(x => x.id === g.id) ? prev.map(x => x.id === g.id ? g : x) : [...prev, g])} 
+                onSaveGrades={setStudentGradesSync}
                 homeroomRecords={homeroomRecords} 
                 onAddHomeroomRecord={r => setHomeroomRecordsSync([...homeroomRecords, r])} 
                 onEditHomeroomRecord={r => setHomeroomRecordsSync(homeroomRecords.map(x => x.id === r.id ? r : x))} 

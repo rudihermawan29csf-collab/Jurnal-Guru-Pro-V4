@@ -96,6 +96,7 @@ export interface TeachingJournal {
   notes: string;
   studentAttendance: Record<string, 'H' | 'S' | 'I' | 'A' | 'DL'>; // Student ID -> Status
   attendance?: string;
+  photos?: string[]; // Array of Base64 strings for documentation (Max 4)
 }
 
 export interface TeacherAgenda {
