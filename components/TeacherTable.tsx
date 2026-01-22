@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherData, ClassHours, AppSettings } from '../types';
-import { Download, Plus, Edit2, Trash2, X, Save, FileSpreadsheet, FileText, ChevronDown, Upload } from 'lucide-react';
+import { Download, Plus, Edit2, Trash2, X, Save, FileSpreadsheet, FileText, ChevronDown, Upload, ClipboardPaste, ArrowRight } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -21,6 +21,11 @@ const EmptyClassHours: ClassHours = { A: 0, B: 0, C: 0 };
 const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, onBulkAdd, onEdit, onDelete, appSettings }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherData | null>(null);
+  
+  // Paste/Bulk Input State
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [pasteContent, setPasteContent] = useState('');
+  const [parsedTeachers, setParsedTeachers] = useState<TeacherData[]>([]);
   
   // Download Dropdown State
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
@@ -53,6 +58,78 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
     (t.additionalTask || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (t.code || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // --- PASTE PARSING LOGIC ---
+  const handleProcessPaste = () => {
+    if (!pasteContent.trim()) return;
+
+    const rows = pasteContent.trim().split('\n');
+    const newTeachers: TeacherData[] = [];
+
+    rows.forEach((row, idx) => {
+        // Try to split by tab first (Excel copy), then by multiple spaces
+        let cols = row.split('\t');
+        if (cols.length < 2) {
+            cols = row.split(/ {2,}/); // Split by 2 or more spaces
+        }
+        
+        // Skip header if it looks like one
+        if (cols[0]?.toLowerCase().includes('no') && cols[1]?.toLowerCase().includes('nama')) return;
+
+        // Basic mapping assumption: NO | NAMA | PANGKAT/GOL | MAPEL | ...
+        // Adjust indices based on common formats
+        const no = cols[0]?.trim() || String(data.length + idx + 1);
+        const name = cols[1]?.trim() || 'Tanpa Nama';
+        
+        // Handle Rank/Gol (often merged or separate)
+        let rank = '-';
+        let gol = '-';
+        const rankGolCol = cols[2]?.trim() || '';
+        if (rankGolCol.includes('/')) {
+            const parts = rankGolCol.split('/');
+            rank = parts[0].trim();
+            gol = parts.slice(1).join('/').trim();
+        } else {
+            rank = rankGolCol;
+        }
+
+        const subject = cols[3]?.trim() || '-';
+        
+        // Generate Code
+        const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+        const subjCode = subject.substring(0, 3).toUpperCase();
+        const code = `${subjCode}-${initials}${Math.floor(Math.random() * 100)}`;
+
+        newTeachers.push({
+            id: Date.now() + idx + Math.random(),
+            no,
+            name,
+            nip: '-', // Default
+            rank,
+            gol,
+            subject,
+            code,
+            hoursVII: { A: 0, B: 0, C: 0 },
+            hoursVIII: { A: 0, B: 0, C: 0 },
+            hoursIX: { A: 0, B: 0, C: 0 },
+            additionalTask: '-',
+            additionalHours: 0,
+            totalHours: 0
+        });
+    });
+
+    setParsedTeachers(newTeachers);
+  };
+
+  const handleSavePaste = () => {
+    if (onBulkAdd && parsedTeachers.length > 0) {
+        onBulkAdd(parsedTeachers);
+        setIsPasteModalOpen(false);
+        setPasteContent('');
+        setParsedTeachers([]);
+        alert(`Berhasil menambahkan ${parsedTeachers.length} data guru.`);
+    }
+  };
 
   const handleDownloadPDF = () => {
     const doc = new jsPDF('l', 'mm', 'a4'); // Landscape, millimeters, A4
@@ -341,6 +418,14 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
         <h3 className="text-lg font-bold text-gray-800">Tabel Data Pembagian Tugas</h3>
         <div className="flex gap-2 relative">
           <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
+          
+          <button 
+            onClick={() => setIsPasteModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <ClipboardPaste size={16} /> Input Teks
+          </button>
+
           <button 
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
@@ -487,6 +572,79 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
           </div>
         </div>
       </div>
+
+      {/* PASTE / BULK INPUT MODAL */}
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+                <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><ClipboardPaste size={20} className="text-blue-600"/> Import Data dari Teks / Tabel</h3>
+                        <p className="text-xs text-gray-500 mt-1">Salin data dari Excel/Word dan tempel di bawah. Format: <strong>NO | NAMA | PANGKAT/GOL | MAPEL</strong></p>
+                    </div>
+                    <button onClick={() => setIsPasteModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
+                </div>
+                
+                <div className="flex-1 p-6 overflow-y-auto flex flex-col md:flex-row gap-6">
+                    <div className="flex-1 flex flex-col">
+                        <label className="text-sm font-bold text-gray-700 mb-2">Tempel Data Di Sini:</label>
+                        <textarea 
+                            className="flex-1 w-full border border-gray-300 rounded-lg p-3 font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                            placeholder={`Contoh:\n1\tBudi Santoso\tPenata Muda / III a\tMatematika\n2\tSiti Aminah\t-\tBahasa Inggris`}
+                            value={pasteContent}
+                            onChange={(e) => setPasteContent(e.target.value)}
+                        ></textarea>
+                        <button 
+                            onClick={handleProcessPaste}
+                            disabled={!pasteContent.trim()}
+                            className="mt-4 w-full py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                        >
+                            Proses Data <ArrowRight size={16}/>
+                        </button>
+                    </div>
+
+                    <div className="flex-1 flex flex-col bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                        <div className="p-3 border-b border-gray-200 bg-gray-100 font-bold text-xs text-gray-600">Pratinjau Hasil Parsing ({parsedTeachers.length} Data)</div>
+                        <div className="flex-1 overflow-y-auto p-0">
+                            {parsedTeachers.length > 0 ? (
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-100">
+                                        <tr>
+                                            <th className="px-3 py-2 text-left text-[10px] font-bold text-gray-500">No</th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-bold text-gray-500">Nama</th>
+                                            <th className="px-3 py-2 text-left text-[10px] font-bold text-gray-500">Mapel</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {parsedTeachers.map((t, i) => (
+                                            <tr key={i}>
+                                                <td className="px-3 py-1.5 text-[10px] text-gray-500">{t.no}</td>
+                                                <td className="px-3 py-1.5 text-[10px] font-medium text-gray-800">{t.name}</td>
+                                                <td className="px-3 py-1.5 text-[10px] text-gray-600">{t.subject}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="h-full flex items-center justify-center text-gray-400 text-xs italic p-4 text-center">
+                                    Data hasil parsing akan muncul di sini...
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-3 border-t border-gray-200">
+                            <button 
+                                onClick={handleSavePaste}
+                                disabled={parsedTeachers.length === 0}
+                                className="w-full py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 disabled:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <Save size={16}/> Simpan ke Tabel Utama
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* MODAL FORM */}
       {isModalOpen && (

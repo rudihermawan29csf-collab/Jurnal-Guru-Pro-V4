@@ -177,6 +177,8 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
   const [isHomeroomDownloadOpen, setIsHomeroomDownloadOpen] = useState(false);
   const [isAttitudeDownloadOpen, setIsAttitudeDownloadOpen] = useState(false);
   const [isAgendaDownloadOpen, setIsAgendaDownloadOpen] = useState(false);
+  // Image Preview State
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
   const attitudeDownloadRef = useRef<HTMLDivElement>(null);
   const journalDownloadRef = useRef<HTMLDivElement>(null);
@@ -1284,7 +1286,11 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                                 {j.photos && j.photos.length > 0 ? (
                                     <div className="flex -space-x-2 overflow-hidden hover:space-x-1 transition-all">
                                         {j.photos.map((p, i) => (
-                                            <div key={i} className="w-8 h-8 rounded border border-white shadow-sm overflow-hidden relative group/img cursor-pointer">
+                                            <div 
+                                                key={i} 
+                                                onClick={() => setPreviewImage(p)}
+                                                className="w-8 h-8 rounded border border-white shadow-sm overflow-hidden relative group/img cursor-pointer"
+                                            >
                                                 <img src={p} alt="Dok" className="w-full h-full object-cover" />
                                                 <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/10 transition-colors"></div>
                                                 {/* Hover Preview could be implemented here */}
@@ -1321,6 +1327,53 @@ const ClassTeacherSchedule: React.FC<ClassTeacherScheduleProps> = ({
                 </div>
             </div>
           </div>
+        )}
+
+        {/* Image Preview Modal */}
+        {previewImage && (
+            <div 
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in"
+                onClick={() => setPreviewImage(null)}
+            >
+                <div 
+                    className="relative max-w-4xl max-h-[90vh] w-full flex flex-col items-center justify-center" 
+                    onClick={e => e.stopPropagation()}
+                >
+                    <img 
+                        src={previewImage} 
+                        alt="Preview Besar" 
+                        className="max-w-full max-h-[80vh] rounded-lg shadow-2xl object-contain border-4 border-white" 
+                    />
+                    
+                    <div className="absolute -top-10 right-0 flex gap-2">
+                        <a 
+                            href={previewImage} 
+                            download={`Jurnal_Foto_${Date.now()}.jpg`} 
+                            className="bg-white text-gray-800 p-2 rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+                            title="Download Foto"
+                        >
+                            <Download size={20}/>
+                        </a>
+                        <button 
+                            onClick={() => setPreviewImage(null)} 
+                            className="bg-white text-red-600 p-2 rounded-full shadow-lg hover:bg-red-50 transition-colors"
+                            title="Tutup Preview"
+                        >
+                            <X size={20}/>
+                        </button>
+                    </div>
+                    
+                    <div className="mt-4 flex gap-4">
+                        <a 
+                            href={previewImage} 
+                            download={`Jurnal_Foto_${Date.now()}.jpg`} 
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-full font-bold shadow-lg hover:bg-indigo-700 transition-transform hover:scale-105 flex items-center gap-2"
+                        >
+                            <Download size={18}/> Download Foto
+                        </a>
+                    </div>
+                </div>
+            </div>
         )}
       </div>
     );
