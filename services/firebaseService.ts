@@ -1,6 +1,7 @@
 
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, set, get, onValue, child, Database } from 'firebase/database';
+import { getDatabase, ref, set, get, onValue, Database, Unsubscribe } from 'firebase/database';
+import { getAuth, signInAnonymously, onAuthStateChanged, Auth } from 'firebase/auth';
 
 /**
  * TUTORIAL UNTUK PEMULA:
@@ -33,28 +34,51 @@ const hasValidConfig = () => {
 
 let app: FirebaseApp | null = null;
 let db: Database | null = null;
+let auth: Auth | null = null;
 
 if (hasValidConfig()) {
   try {
     app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
     db = getDatabase(app);
-    console.log("✅ Firebase berhasil terhubung!");
+    console.log("✅ Firebase Service Initialized");
   } catch (error) {
     console.error("❌ Gagal inisialisasi Firebase:", error);
   }
 } else {
-  console.warn("⚠️ Konfigurasi Firebase belum diisi atau tidak valid. Silakan tempel kode dari Firebase Console di file services/firebaseService.ts");
+  console.warn("⚠️ Konfigurasi Firebase belum diisi atau tidak valid.");
 }
+
+// Helper untuk memastikan user sudah login sebelum melakukan operasi DB
+const ensureAuthenticated = async (): Promise<void> => {
+  if (!auth) throw new Error("Firebase Auth not initialized");
+  if (auth.currentUser) return; // Sudah login
+  
+  try {
+    await signInAnonymously(auth);
+    console.log("✅ Auto-login Anonymous berhasil");
+  } catch (error: any) {
+    // FALLBACK: Jika Auth gagal (misal belum diaktifkan di console),
+    // kita log warning saja dan biarkan lanjut.
+    // Ini memungkinkan akses ke DB jika Rules-nya masih public (read: true, write: true).
+    if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/configuration-not-found') {
+        console.warn("⚠️ Auth Anonim belum aktif. Mencoba akses database mode publik...");
+    } else {
+        console.warn(`⚠️ Auth error (${error.code}). Mencoba akses database...`);
+    }
+  }
+};
 
 export const firebaseApi = {
   isConfigured: () => {
-    return !!db;
+    return !!db && !!auth;
   },
 
   save: async (key: string, value: any) => {
     if (!db) return;
     try {
-      const dbRef = ref(db, 'schoolData/' + key);
+      await ensureAuthenticated(); // Coba login, tapi tidak throw error jika gagal
+      const dbRef = ref(db, key);
       await set(dbRef, value);
       return { success: true };
     } catch (error) {
@@ -66,8 +90,9 @@ export const firebaseApi = {
   fetchAll: async () => {
     if (!db) return null;
     try {
+      await ensureAuthenticated(); // Coba login, tapi tidak throw error jika gagal
       const dbRef = ref(db);
-      const snapshot = await get(child(dbRef, 'schoolData'));
+      const snapshot = await get(dbRef);
       if (snapshot.exists()) {
         return snapshot.val();
       }
@@ -79,14 +104,52 @@ export const firebaseApi = {
   },
 
   subscribe: (callback: (data: any) => void) => {
-    if (!db) return () => {};
-    const dbRef = ref(db, 'schoolData');
-    return onValue(dbRef, (snapshot) => {
-      if (snapshot.exists()) {
-        callback(snapshot.val());
+    if (!auth || !db) return () => {};
+
+    let dbUnsubscribe: Unsubscribe | null = null;
+    const dbRef = ref(db!);
+
+    // Fungsi internal untuk koneksi ke DB
+    const connectToDb = () => {
+        if (dbUnsubscribe) return; // Mencegah double subscription
+        
+        dbUnsubscribe = onValue(dbRef, (snapshot) => {
+          if (snapshot.exists()) {
+            callback(snapshot.val());
+          } else {
+            callback(null); 
+          }
+        }, (err) => {
+          console.error("Firebase Read Error:", err);
+        });
+    };
+
+    // Listener Auth State
+    const authUnsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Jika berhasil login, langsung konek DB
+        connectToDb();
+      } else {
+        // Jika belum login, coba login anonim
+        signInAnonymously(auth!).catch((err: any) => {
+             // FALLBACK PENTING:
+             // Jika login anonim gagal (error konfigurasi), JANGAN BERHENTI.
+             // Tetap coba hubungkan ke database. Siapa tahu Rules database masih public.
+             if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/configuration-not-found') {
+                 console.warn("⚠️ Firebase Auth belum aktif. Menggunakan mode akses publik.");
+             } else {
+                 console.error("Auth error inside subscribe:", err);
+             }
+             // Tetap panggil connectToDb() sebagai fallback
+             connectToDb();
+        });
       }
-    }, (err) => {
-      console.error("Firebase Subscription error:", err);
     });
+
+    // Kembalikan fungsi cleanup untuk React useEffect
+    return () => {
+      authUnsubscribe();
+      if (dbUnsubscribe) dbUnsubscribe();
+    };
   }
 };

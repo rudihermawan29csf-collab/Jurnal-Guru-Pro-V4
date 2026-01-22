@@ -20,13 +20,14 @@ const App: React.FC = () => {
   const [isCloudConfigured, setIsCloudConfigured] = useState(firebaseApi.isConfigured());
   const [isSaving, setIsSaving] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [isDataLoaded, setIsDataLoaded] = useState(false); // New state to prevent overwrite on load
 
   // --- DATA STATES ---
   const [appSettings, setAppSettings] = useState<AppSettings>({
     academicYear: '2025/2026',
     semester: 'Genap',
     lastUpdated: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
-    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Logo_Tut_Wuri_Handayani.png/800px-Logo_Tut_Wuri_Handayani.png',
+    logoUrl: 'https://iili.io/fGvdYoQ.png',
     headmaster: 'Didik Sulistyo, M.M.Pd',
     headmasterNip: '196605181989011002'
   });
@@ -55,6 +56,10 @@ const App: React.FC = () => {
   useEffect(() => {
     if (firebaseApi.isConfigured()) {
       const unsubscribe = firebaseApi.subscribe((cloudData) => {
+        // Mark data as loaded immediately to allow saving (if needed)
+        // But more importantly, to know we have connected.
+        setIsDataLoaded(true);
+
         if (!cloudData) return;
         
         console.log("🔥 Data Cloud Updated!");
@@ -81,6 +86,12 @@ const App: React.FC = () => {
   const saveToCloud = useCallback(async (key: string, value: any) => {
     if (isInitialMount.current) return;
     if (!isCloudConfigured) return;
+    // CRITICAL: Prevent saving if we haven't loaded data from cloud yet.
+    // This stops empty local state from overwriting cloud data on startup.
+    if (!isDataLoaded) {
+        console.warn("Skipping save: Cloud data not yet loaded.");
+        return;
+    }
     
     setIsSaving(true);
     try {
@@ -91,7 +102,7 @@ const App: React.FC = () => {
       setSyncError("Penyimpanan Gagal");
       setIsSaving(false);
     }
-  }, [isCloudConfigured]);
+  }, [isCloudConfigured, isDataLoaded]);
 
   useEffect(() => { 
     if (isInitialMount.current) {
@@ -158,7 +169,7 @@ const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-24">
             <div className="flex items-center gap-4">
-              <img src={appSettings.logoUrl} alt="Logo" className="h-20 w-auto object-contain" />
+              <img src={appSettings.logoUrl} alt="Logo" className="h-20 w-auto object-contain min-w-[60px]" />
               <div>
                 <h1 className="text-lg font-extrabold text-gray-900 leading-none">Sistem Pembagian Tugas</h1>
                 <h2 className="text-base font-bold text-indigo-700 leading-tight mt-1">SMPN 3 Pacet</h2>
