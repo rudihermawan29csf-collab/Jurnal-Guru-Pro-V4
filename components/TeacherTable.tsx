@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { TeacherData, ClassHours, AppSettings } from '../types';
-import { Download, Plus, Edit2, Trash2, X, Save, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
+import { Download, Plus, Edit2, Trash2, X, Save, FileSpreadsheet, FileText, ChevronDown, Upload } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -9,6 +10,7 @@ interface TeacherTableProps {
   data: TeacherData[];
   searchTerm: string;
   onAdd: (teacher: TeacherData) => void;
+  onBulkAdd?: (teachers: TeacherData[]) => void;
   onEdit: (teacher: TeacherData) => void;
   onDelete: (id: number) => void;
   appSettings: AppSettings;
@@ -16,13 +18,14 @@ interface TeacherTableProps {
 
 const EmptyClassHours: ClassHours = { A: 0, B: 0, C: 0 };
 
-const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, onEdit, onDelete, appSettings }) => {
+const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, onBulkAdd, onEdit, onDelete, appSettings }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<TeacherData | null>(null);
   
   // Download Dropdown State
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -186,6 +189,95 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
     setIsDownloadMenuOpen(false);
   };
 
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws) as any[];
+
+        const newTeachers: TeacherData[] = data.map((row, index) => {
+            // Mapping flexible headers
+            const no = row['No'] || row['NO'] || String(index + 1);
+            const name = row['Nama Guru'] || row['NAMA GURU'] || row['Nama'] || row['NAMA'] || 'Guru Baru';
+            const subject = row['Mata Pelajaran'] || row['MATA PELAJARAN'] || row['Mata Pel'] || row['MATA PEL'] || row['Mapel'] || '-';
+            
+            // Handle Pangkat/Gol which might be merged or separate
+            let rank = row['Pangkat'] || row['PANGKAT'] || '-';
+            let gol = row['Gol'] || row['Golongan'] || row['GOL'] || '-';
+            
+            const mergedPangkatGol = row['Pangkat/Gol'] || row['PANGKAT/GOL'] || row['Pangkat / Gol'] || '';
+            if (mergedPangkatGol) {
+                // Try to split logic or just assign
+                const parts = mergedPangkatGol.split('/');
+                if (parts.length > 1) {
+                    // Assume part 1 is Rank (if long) or Gol (if short like III/a)?
+                    // Usually Pangkat/Gol format: "Pembina / IV a"
+                    // Let's just keep it simple or try to parse
+                    // For now, let's put the whole thing in Rank or split if slash present
+                    rank = parts[0].trim();
+                    gol = parts.slice(1).join('/').trim();
+                } else {
+                    rank = mergedPangkatGol;
+                }
+            }
+
+            // Generate Code
+            const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+            const subjCode = subject.substring(0, 3).toUpperCase();
+            const code = `${subjCode}-${initials}${Math.floor(Math.random() * 100)}`;
+
+            return {
+                id: Date.now() + index,
+                no: String(no),
+                name: String(name),
+                nip: row['NIP'] || '-',
+                rank: String(rank),
+                gol: String(gol),
+                subject: String(subject),
+                code: row['Kode'] || row['KODE'] || code,
+                hoursVII: { A: row['VII A']||0, B: row['VII B']||0, C: row['VII C']||0 },
+                hoursVIII: { A: row['VIII A']||0, B: row['VIII B']||0, C: row['VIII C']||0 },
+                hoursIX: { A: row['IX A']||0, B: row['IX B']||0, C: row['IX C']||0 },
+                additionalTask: row['Tugas Tambahan'] || row['TUGAS TAMBAHAN'] || '-',
+                additionalHours: Number(row['Jam Tamb'] || row['Jam Tambahan'] || 0),
+                totalHours: 0 // Will be recalculated or trusted from excel if needed, but let's recalculate in app logic usually
+            };
+        });
+        
+        // Recalculate totals
+        newTeachers.forEach(t => {
+            let sum = 0;
+            Object.values(t.hoursVII).forEach(v => sum += Number(v));
+            Object.values(t.hoursVIII).forEach(v => sum += Number(v));
+            Object.values(t.hoursIX).forEach(v => sum += Number(v));
+            sum += t.additionalHours;
+            t.totalHours = sum;
+        });
+
+        if (onBulkAdd) {
+            onBulkAdd(newTeachers);
+            alert(`Berhasil mengimpor ${newTeachers.length} data guru!`);
+        } else {
+            alert("Fitur bulk add belum diimplementasikan di App parent.");
+        }
+        
+        if (fileInputRef.current) fileInputRef.current.value = '';
+
+      } catch (error) {
+        console.error("Import Error:", error);
+        alert("Gagal mengimpor file. Pastikan format Excel valid.");
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   const openAddModal = () => {
     setEditingTeacher(null);
     setFormData({
@@ -255,6 +347,14 @@ const TeacherTable: React.FC<TeacherTableProps> = ({ data, searchTerm, onAdd, on
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-bold text-gray-800">Tabel Data Pembagian Tugas</h3>
         <div className="flex gap-2 relative">
+          <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"
+          >
+            <Upload size={16} /> Import Excel
+          </button>
+          
           <button 
             onClick={openAddModal}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
